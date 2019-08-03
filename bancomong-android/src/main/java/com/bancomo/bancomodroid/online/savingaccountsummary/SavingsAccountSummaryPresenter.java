@@ -1,0 +1,99 @@
+package com.bancomo.bancomodroid.online.savingaccountsummary;
+
+import com.bancomo.api.GenericResponse;
+import com.bancomo.api.datamanager.DataManagerSavings;
+import com.bancomo.bancomodroid.R;
+import com.bancomo.bancomodroid.base.BasePresenter;
+import com.bancomo.objects.accounts.savings.SavingsAccountWithAssociations;
+import com.bancomo.utils.Constants;
+import com.bancomo.utils.MFErrorParser;
+
+import java.util.HashMap;
+
+import javax.inject.Inject;
+
+import rx.Subscriber;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.schedulers.Schedulers;
+import rx.subscriptions.CompositeSubscription;
+
+/**
+ * Created by Rajan Maurya on 07/06/16.
+ */
+public class SavingsAccountSummaryPresenter extends BasePresenter<SavingsAccountSummaryMvpView> {
+
+    private final DataManagerSavings mDataManagerSavings;
+    private CompositeSubscription mSubscriptions;
+
+    @Inject
+    public SavingsAccountSummaryPresenter(DataManagerSavings dataManagerSavings) {
+        mDataManagerSavings = dataManagerSavings;
+        mSubscriptions = new CompositeSubscription();
+    }
+
+    @Override
+    public void attachView(SavingsAccountSummaryMvpView mvpView) {
+        super.attachView(mvpView);
+    }
+
+    @Override
+    public void detachView() {
+        super.detachView();
+        mSubscriptions.unsubscribe();
+    }
+
+    //This Method will hit end point ?associations=transactions
+    public void loadSavingAccount(String type, int accountId) {
+        checkViewAttached();
+        getMvpView().showProgressbar(true);
+        mSubscriptions.add(mDataManagerSavings
+                .getSavingsAccount(type, accountId, Constants.TRANSACTIONS)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeOn(Schedulers.io())
+                .subscribe(new Subscriber<SavingsAccountWithAssociations>() {
+                    @Override
+                    public void onCompleted() {
+                        getMvpView().showProgressbar(false);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        getMvpView().showProgressbar(false);
+                        getMvpView().showFetchingError(R.string.failed_to_fetch_savingsaccount);
+                    }
+
+                    @Override
+                    public void onNext(
+                            SavingsAccountWithAssociations savingsAccountWithAssociations) {
+                        getMvpView().showProgressbar(false);
+                        getMvpView().showSavingAccount(savingsAccountWithAssociations);
+                    }
+                }));
+    }
+
+
+    public void activateSavings(int savingsAccountId, HashMap<String, Object> request) {
+        checkViewAttached();
+        getMvpView().showProgressbar(false);
+        mSubscriptions.add(mDataManagerSavings.activateSavings(savingsAccountId, request)
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeOn(Schedulers.io())
+                .subscribe(new Subscriber<GenericResponse>() {
+                    @Override
+                    public void onCompleted() {
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        getMvpView().showProgressbar(false);
+                        getMvpView().showFetchingError(MFErrorParser.errorMessage(e));
+                    }
+
+                    @Override
+                    public void onNext(GenericResponse genericResponse) {
+                        getMvpView().showProgressbar(false);
+                        getMvpView().showSavingsActivatedSuccessfully(genericResponse);
+                    }
+                }));
+    }
+}

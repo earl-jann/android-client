@@ -1,0 +1,38 @@
+package com.bancomo.bancomodroid.dialogfragments.syncclientsdialog;
+
+import com.bancomo.bancomodroid.base.MvpView;
+
+/**
+ * Created by Rajan Maurya on 08/08/16.
+ */
+public interface SyncClientsDialogMvpView extends MvpView {
+
+    void showUI();
+
+    void showSyncingClient(String clientName);
+
+    void showSyncedFailedClients(int failedCount);
+
+    void setMaxSingleSyncClientProgressBar(int total);
+
+    void updateSingleSyncClientProgressBar(int i);
+
+    void updateTotalSyncClientProgressBarAndCount(int i);
+
+    int getMaxSingleSyncClientProgressBar();
+
+    void showNetworkIsNotAvailable();
+
+    void showClientsSyncSuccessfully();
+
+    Boolean isOnline();
+
+    void dismissDialog();
+
+    void showDialog();
+
+    void hideDialog();
+
+    void showError(int s);
+
+}

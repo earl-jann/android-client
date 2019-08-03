@@ -1,0 +1,693 @@
+/*
+ * This project is licensed under the open source MPL V2.
+ * See https://github.com/openMF/android-client/blob/master/LICENSE.md
+ */
+
+package com.bancomo.bancomodroid.online.clientdetails;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.MediaStore;
+import android.support.v4.app.FragmentTransaction;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.content.res.ResourcesCompat;
+import android.support.v7.widget.PopupMenu;
+import android.text.TextUtils;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.LinearLayout;
+import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.ProgressBar;
+import android.widget.RelativeLayout;
+import android.widget.TableRow;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import com.joanzapata.iconify.fonts.MaterialIcons;
+import com.joanzapata.iconify.widget.IconTextView;
+import com.bancomo.bancomodroid.R;
+import com.bancomo.bancomodroid.activity.pinpointclient.PinpointClientActivity;
+import com.bancomo.bancomodroid.adapters.LoanAccountsListAdapter;
+import com.bancomo.bancomodroid.adapters.SavingsAccountsListAdapter;
+import com.bancomo.bancomodroid.core.BancoMoBaseActivity;
+import com.bancomo.bancomodroid.core.BancoMoBaseFragment;
+import com.bancomo.bancomodroid.core.util.Toaster;
+import com.bancomo.bancomodroid.online.activate.ActivateFragment;
+import com.bancomo.bancomodroid.online.clientcharge.ClientChargeFragment;
+import com.bancomo.bancomodroid.online.clientidentifiers.ClientIdentifiersFragment;
+import com.bancomo.bancomodroid.online.datatable.DataTableFragment;
+import com.bancomo.bancomodroid.online.documentlist.DocumentListFragment;
+import com.bancomo.bancomodroid.online.loanaccount.LoanAccountFragment;
+import com.bancomo.bancomodroid.online.savingsaccount.SavingsAccountFragment;
+import com.bancomo.bancomodroid.online.surveylist.SurveyListFragment;
+import com.bancomo.bancomodroid.views.CircularImageView;
+import com.bancomo.objects.accounts.ClientAccounts;
+import com.bancomo.objects.accounts.savings.DepositType;
+import com.bancomo.objects.client.Charges;
+import com.bancomo.objects.client.Client;
+import com.bancomo.utils.Constants;
+import com.bancomo.utils.FragmentConstants;
+import com.bancomo.utils.ImageLoaderUtils;
+import com.bancomo.utils.Utils;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.inject.Inject;
+
+import butterknife.BindView;
+import butterknife.ButterKnife;
+import butterknife.OnClick;
+import okhttp3.ResponseBody;
+
+import static android.view.View.GONE;
+import static android.view.View.OnClickListener;
+import static android.view.View.OnTouchListener;
+import static android.view.View.VISIBLE;
+
+
+public class ClientDetailsFragment extends BancoMoBaseFragment implements ClientDetailsMvpView {
+
+    // Intent response codes. Each response code must be a unique integer.
+    private static final int CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE = 1;
+
+    public static final int MENU_ITEM_DATA_TABLES = 1000;
+    public static final int MENU_ITEM_PIN_POINT = 1001;
+    public static final int MENU_ITEM_CLIENT_CHARGES = 1003;
+    public static final int MENU_ITEM_ADD_SAVINGS_ACCOUNT = 1004;
+    public static final int MENU_ITEM_ADD_LOAN_ACCOUNT = 1005;
+    public static final int MENU_ITEM_DOCUMENTS = 1006;
+    public static final int MENU_ITEM_IDENTIFIERS = 1007;
+    public static final int MENU_ITEM_SURVEYS = 1008;
+
+    private final String TAG = ClientDetailsFragment.class.getSimpleName();
+
+    public int clientId;
+    List<Charges> chargesList = new ArrayList<>();
+
+    @BindView(R.id.tv_fullName)
+    TextView tv_fullName;
+
+    @BindView(R.id.tv_accountNumber)
+    TextView tv_accountNumber;
+
+    @BindView(R.id.tv_externalId)
+    TextView tv_externalId;
+
+    @BindView(R.id.tv_activationDate)
+    TextView tv_activationDate;
+
+    @BindView(R.id.tv_office)
+    TextView tv_office;
+
+    @BindView(R.id.iv_clientImage)
+    CircularImageView iv_clientImage;
+
+    @BindView(R.id.pb_imageProgressBar)
+    ProgressBar pb_imageProgressBar;
+
+    @BindView(R.id.row_account)
+    TableRow rowAccount;
+
+    @BindView(R.id.row_external)
+    TableRow rowExternal;
+
+    @BindView(R.id.row_activation)
+    TableRow rowActivation;
+
+    @BindView(R.id.row_office)
+    TableRow rowOffice;
+
+    @BindView(R.id.row_group)
+    TableRow rowGroup;
+
+    @BindView(R.id.row_staff)
+    TableRow rowStaff;
+
+    @BindView(R.id.row_loan)
+    TableRow rowLoan;
+
+    @BindView(R.id.ll_bottom_panel)
+    LinearLayout llBottomPanel;
+
+    @BindView(R.id.rl_client)
+    RelativeLayout rlClient;
+
+    @Inject
+    ClientDetailsPresenter mClientDetailsPresenter;
+
+    private View rootView;
+    private OnFragmentInteractionListener mListener;
+    private File capturedClientImageFile;
+    private AccountAccordion accountAccordion;
+    private boolean isClientActive = false;
+
+
+    /**
+     * Use this factory method to create a new instance of
+     * this fragment using the provided parameters.
+     *
+     * @param clientId Client's Id
+     */
+    public static ClientDetailsFragment newInstance(int clientId) {
+        ClientDetailsFragment fragment = new ClientDetailsFragment();
+        Bundle args = new Bundle();
+        args.putInt(Constants.CLIENT_ID, clientId);
+        fragment.setArguments(args);
+        return fragment;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        ((BancoMoBaseActivity) getActivity()).getActivityComponent().inject(this);
+        if (getArguments() != null) {
+            clientId = getArguments().getInt(Constants.CLIENT_ID);
+        }
+        setHasOptionsMenu(true);
+        capturedClientImageFile = new File(getActivity().getExternalCacheDir(), "client_image.png");
+    }
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle
+            savedInstanceState) {
+        rootView = inflater.inflate(R.layout.fragment_client_details, container, false);
+
+        ButterKnife.bind(this, rootView);
+        mClientDetailsPresenter.attachView(this);
+
+        inflateClientInformation();
+
+        return rootView;
+    }
+
+    @OnClick(R.id.btn_activate_client)
+    void onClickActivateClient() {
+        activateClient();
+    }
+
+    public void inflateClientInformation() {
+        mClientDetailsPresenter.loadClientDetailsAndClientAccounts(clientId);
+    }
+
+    @Override
+    public void onAttach(Activity activity) {
+        super.onAttach(activity);
+        try {
+            mListener = (OnFragmentInteractionListener) activity;
+        } catch (ClassCastException e) {
+            throw new ClassCastException(getActivity().getClass().getSimpleName() + " must " +
+                    "implement OnFragmentInteractionListener");
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE && resultCode == Activity.RESULT_OK)
+            uploadImage(capturedClientImageFile);
+    }
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        super.onCreateOptionsMenu(menu, inflater);
+    }
+
+    @Override
+    public void onPrepareOptionsMenu(Menu menu) {
+        menu.clear();
+        if (isClientActive) {
+            menu.add(Menu.NONE, MENU_ITEM_DATA_TABLES, Menu.NONE, Constants
+                    .DATA_TABLE_CLIENTS_NAME);
+            menu.add(Menu.NONE, MENU_ITEM_PIN_POINT, Menu.NONE, getString(R.string.pinpoint));
+            menu.add(Menu.NONE, MENU_ITEM_CLIENT_CHARGES, Menu.NONE, getString(R.string.charges));
+            menu.add(Menu.NONE, MENU_ITEM_ADD_SAVINGS_ACCOUNT, Menu.NONE, getString(R.string
+                    .savings_account));
+            menu.add(Menu.NONE, MENU_ITEM_ADD_LOAN_ACCOUNT, Menu.NONE,
+                    getString(R.string.add_loan));
+            menu.add(Menu.NONE, MENU_ITEM_DOCUMENTS, Menu.NONE, getString(R.string.documents));
+            menu.add(Menu.NONE, MENU_ITEM_IDENTIFIERS, Menu.NONE, getString(R.string.identifiers));
+            menu.add(Menu.NONE, MENU_ITEM_SURVEYS, Menu.NONE, getString(R.string.survey));
+        }
+        super.onPrepareOptionsMenu(menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case MENU_ITEM_DATA_TABLES:
+                loadClientDataTables();
+                break;
+            case MENU_ITEM_DOCUMENTS:
+                loadDocuments();
+                break;
+            case MENU_ITEM_CLIENT_CHARGES:
+                loadClientCharges();
+                break;
+            case MENU_ITEM_ADD_SAVINGS_ACCOUNT:
+                addsavingsaccount();
+                break;
+            case MENU_ITEM_ADD_LOAN_ACCOUNT:
+                addloanaccount();
+                break;
+            case MENU_ITEM_IDENTIFIERS:
+                loadIdentifiers();
+                break;
+            case MENU_ITEM_PIN_POINT:
+                Intent i = new Intent(getActivity(), PinpointClientActivity.class);
+                i.putExtra(Constants.CLIENT_ID, clientId);
+                startActivity(i);
+                break;
+            case MENU_ITEM_SURVEYS:
+                loadSurveys();
+                break;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    public void captureClientImage() {
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(capturedClientImageFile));
+        startActivityForResult(intent, CAPTURE_IMAGE_ACTIVITY_REQUEST_CODE);
+    }
+
+    /**
+     * A service to upload the image of the client.
+     *
+     * @param pngFile - PNG images supported at the moment
+     */
+    private void uploadImage(File pngFile) {
+        mClientDetailsPresenter.uploadImage(clientId, pngFile);
+    }
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        mClientDetailsPresenter.detachView();
+    }
+
+    public void loadDocuments() {
+        DocumentListFragment documentListFragment = DocumentListFragment.newInstance(Constants
+                .ENTITY_TYPE_CLIENTS, clientId);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, documentListFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void loadClientCharges() {
+        ClientChargeFragment clientChargeFragment = ClientChargeFragment.newInstance(clientId,
+                chargesList);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, clientChargeFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void loadIdentifiers() {
+        ClientIdentifiersFragment clientIdentifiersFragment = ClientIdentifiersFragment
+                .newInstance(clientId);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, clientIdentifiersFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void loadSurveys() {
+        SurveyListFragment surveyListFragment = SurveyListFragment.newInstance(clientId);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, surveyListFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void addsavingsaccount() {
+        SavingsAccountFragment savingsAccountFragment = SavingsAccountFragment.newInstance
+                (clientId, false);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, savingsAccountFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void addloanaccount() {
+        LoanAccountFragment loanAccountFragment = LoanAccountFragment.newInstance(clientId);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, loanAccountFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void activateClient() {
+        ActivateFragment activateFragment =
+                ActivateFragment.newInstance(clientId, Constants.ACTIVATE_CLIENT);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, activateFragment);
+        fragmentTransaction.commit();
+    }
+
+    public void loadClientDataTables() {
+        DataTableFragment loanAccountFragment = DataTableFragment.newInstance(Constants
+                .DATA_TABLE_NAME_CLIENT, clientId);
+        FragmentTransaction fragmentTransaction = getActivity().getSupportFragmentManager()
+                .beginTransaction();
+        fragmentTransaction.addToBackStack(FragmentConstants.FRAG_CLIENT_DETAILS);
+        fragmentTransaction.replace(R.id.container, loanAccountFragment);
+        fragmentTransaction.commit();
+    }
+
+    @Override
+    public void showProgressbar(boolean show) {
+        if (show) {
+            rlClient.setVisibility(GONE);
+            showBancoMoProgressBar();
+        } else {
+            rlClient.setVisibility(VISIBLE);
+            hideBancoMoProgressBar();
+        }
+    }
+
+    @Override
+    public void showClientInformation(Client client) {
+        if (client != null) {
+            setToolbarTitle(getString(R.string.client) + " - " + client.getLastname());
+            isClientActive = client.isActive();
+            getActivity().invalidateOptionsMenu();
+            if (!client.isActive()) {
+                llBottomPanel.setVisibility(VISIBLE);
+            }
+            tv_fullName.setText(client.getDisplayName());
+            tv_accountNumber.setText(client.getAccountNo());
+            tv_externalId.setText(client.getExternalId());
+            if (TextUtils.isEmpty(client.getAccountNo()))
+                rowAccount.setVisibility(GONE);
+
+            if (TextUtils.isEmpty(client.getExternalId()))
+                rowExternal.setVisibility(GONE);
+
+            try {
+                String dateString = Utils.getStringOfDate(getActivity(),
+                        client.getActivationDate());
+                tv_activationDate.setText(dateString);
+
+                if (TextUtils.isEmpty(dateString))
+                    rowActivation.setVisibility(GONE);
+
+            } catch (IndexOutOfBoundsException e) {
+                Toast.makeText(getActivity(), getString(R.string.error_client_inactive),
+                        Toast.LENGTH_SHORT).show();
+                tv_activationDate.setText("");
+            }
+            tv_office.setText(client.getOfficeName());
+
+            if (TextUtils.isEmpty(client.getOfficeName()))
+                rowOffice.setVisibility(GONE);
+
+            if (client.isImagePresent()) {
+                loadClientProfileImage();
+            } else {
+                iv_clientImage.setImageDrawable(
+                        ResourcesCompat.getDrawable(getResources(), R.drawable
+                                .ic_launcher, null));
+
+                pb_imageProgressBar.setVisibility(GONE);
+            }
+
+            iv_clientImage.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    PopupMenu menu = new PopupMenu(getActivity(), view);
+                    menu.getMenuInflater().inflate(R.menu.client_image_popup, menu
+                            .getMenu());
+                    menu.setOnMenuItemClickListener(
+                            new PopupMenu.OnMenuItemClickListener() {
+                                @Override
+                                public boolean onMenuItemClick(MenuItem menuItem) {
+                                    switch (menuItem.getItemId()) {
+                                        case R.id.client_image_capture:
+                                            captureClientImage();
+                                            break;
+                                        case R.id.client_image_remove:
+                                            mClientDetailsPresenter.deleteClientImage(clientId);
+                                            break;
+                                        default:
+                                            Log.e("ClientDetailsFragment", "Unrecognized " +
+                                                    "client " +
+                                                    "image menu item");
+                                    }
+                                    return true;
+                                }
+                            });
+                    menu.show();
+                }
+            });
+            //inflateClientsAccounts();
+        }
+    }
+
+    @Override
+    public void showUploadImageSuccessfully(ResponseBody response, String imagePath) {
+        Toaster.show(rootView, R.string.client_image_updated);
+        iv_clientImage.setImageBitmap(BitmapFactory.decodeFile(imagePath));
+    }
+
+    @Override
+    public void showUploadImageFailed(String s) {
+        Toaster.show(rootView, s);
+        loadClientProfileImage();
+    }
+
+    @Override
+    public void showUploadImageProgressbar(boolean b) {
+        if (b) {
+            pb_imageProgressBar.setVisibility(VISIBLE);
+        } else {
+            pb_imageProgressBar.setVisibility(GONE);
+        }
+    }
+
+    public void loadClientProfileImage() {
+        pb_imageProgressBar.setVisibility(VISIBLE);
+        ImageLoaderUtils.loadImage(getActivity(), clientId, iv_clientImage);
+        pb_imageProgressBar.setVisibility(GONE);
+    }
+
+    @Override
+    public void showClientImageDeletedSuccessfully() {
+        Toaster.show(rootView, "Image deleted");
+        iv_clientImage.setImageDrawable(ContextCompat.getDrawable(getActivity(), R.drawable
+                .ic_launcher));
+    }
+
+    @Override
+    public void showClientAccount(ClientAccounts clientAccounts) {
+        // Proceed only when the fragment is added to the activity.
+        if (!isAdded()) {
+            return;
+        }
+        accountAccordion = new AccountAccordion(getActivity());
+        if (clientAccounts.getLoanAccounts().size() > 0) {
+            AccountAccordion.Section section = AccountAccordion.Section.LOANS;
+            final LoanAccountsListAdapter adapter =
+                    new LoanAccountsListAdapter(getActivity().getApplicationContext(),
+                            clientAccounts.getLoanAccounts());
+            section.connect(getActivity(), adapter, new AdapterView.OnItemClickListener() {
+                @Override
+                public void onItemClick(AdapterView<?> adapterView, View view, int i,
+                                        long l) {
+                    mListener.loadLoanAccountSummary(adapter.getItem(i).getId());
+                }
+            });
+        }
+
+        if (clientAccounts.getNonRecurringSavingsAccounts().size() > 0) {
+            AccountAccordion.Section section = AccountAccordion.Section.SAVINGS;
+            final SavingsAccountsListAdapter adapter =
+                    new SavingsAccountsListAdapter(getActivity().getApplicationContext(),
+                            clientAccounts.getNonRecurringSavingsAccounts());
+            section.connect(getActivity(), adapter, new AdapterView.OnItemClickListener() {
+                @Override
+                public void onItemClick(AdapterView<?> adapterView, View view, int i,
+                                        long l) {
+                    mListener.loadSavingsAccountSummary(adapter.getItem(i).getId(),
+                            adapter.getItem(i).getDepositType());
+                }
+            });
+        }
+
+        if (clientAccounts.getRecurringSavingsAccounts().size() > 0) {
+            AccountAccordion.Section section = AccountAccordion.Section.RECURRING;
+            final SavingsAccountsListAdapter adapter =
+                    new SavingsAccountsListAdapter(getActivity().getApplicationContext(),
+                            clientAccounts.getRecurringSavingsAccounts());
+            section.connect(getActivity(), adapter, new AdapterView.OnItemClickListener() {
+                @Override
+                public void onItemClick(AdapterView<?> adapterView, View view, int i,
+                                        long l) {
+                    mListener.loadSavingsAccountSummary(adapter.getItem(i).getId(),
+                            adapter.getItem(i).getDepositType());
+                }
+            });
+        }
+    }
+
+    @Override
+    public void showFetchingError(String s) {
+        Toast.makeText(getActivity(), s, Toast.LENGTH_SHORT).show();
+    }
+
+    public interface OnFragmentInteractionListener {
+        void loadLoanAccountSummary(int loanAccountNumber);
+
+        void loadSavingsAccountSummary(int savingsAccountNumber, DepositType accountType);
+    }
+
+
+    private static class AccountAccordion {
+        private final Activity context;
+        private Section currentSection;
+
+        private AccountAccordion(Activity context) {
+            this.context = context;
+            Section.configure(context, this);
+        }
+
+        public void setCurrentSection(Section currentSection) {
+            // close previous section
+            if (this.currentSection != null) {
+                this.currentSection.close(context);
+            }
+
+            this.currentSection = currentSection;
+
+            // open new section
+            if (this.currentSection != null) {
+                this.currentSection.open(context);
+            }
+        }
+
+        private enum Section {
+            LOANS(R.id.account_accordion_section_loans, R.string.loanAccounts),
+            SAVINGS(R.id.account_accordion_section_savings, R.string.savingAccounts),
+            RECURRING(R.id.account_accordion_section_recurring, R.string.recurringAccount);
+
+            private static final MaterialIcons LIST_OPEN_ICON = MaterialIcons.md_add_circle_outline;
+            private static final MaterialIcons LIST_CLOSED_ICON = MaterialIcons
+                    .md_remove_circle_outline;
+
+            private final int sectionId;
+            private final int textViewStringId;
+
+            Section(int sectionId, int textViewStringId) {
+                this.sectionId = sectionId;
+                this.textViewStringId = textViewStringId;
+            }
+
+            public static void configure(Activity context, final AccountAccordion accordion) {
+                for (Section section : Section.values()) {
+                    section.configureSection(context, accordion);
+                }
+            }
+
+            public TextView getTextView(Activity context) {
+                return (TextView) getSectionView(context).findViewById(R.id.tv_toggle_accounts);
+            }
+
+            public IconTextView getIconView(Activity context) {
+                return (IconTextView) getSectionView(context).findViewById(R.id
+                        .tv_toggle_accounts_icon);
+            }
+
+            public ListView getListView(Activity context) {
+                return (ListView) getSectionView(context).findViewById(R.id.lv_accounts);
+            }
+
+            public TextView getCountView(Activity context) {
+                return (TextView) getSectionView(context).findViewById(R.id.tv_count_accounts);
+            }
+
+            public View getSectionView(Activity context) {
+                return context.findViewById(this.sectionId);
+            }
+
+            public void connect(Activity context, ListAdapter adapter, AdapterView
+                    .OnItemClickListener onItemClickListener) {
+                getCountView(context).setText(String.valueOf(adapter.getCount()));
+                ListView listView = getListView(context);
+                listView.setAdapter(adapter);
+                listView.setOnItemClickListener(onItemClickListener);
+            }
+
+            public void open(Activity context) {
+                IconTextView iconView = getIconView(context);
+                iconView.setText("{" + LIST_CLOSED_ICON.key() + "}");
+                getListView(context).setVisibility(VISIBLE);
+            }
+
+            public void close(Activity context) {
+                IconTextView iconView = getIconView(context);
+                iconView.setText("{" + LIST_OPEN_ICON.key() + "}");
+                getListView(context).setVisibility(GONE);
+            }
+
+            private void configureSection(Activity context, final AccountAccordion accordion) {
+                final ListView listView = getListView(context);
+                final TextView textView = getTextView(context);
+                final IconTextView iconView = getIconView(context);
+
+                OnClickListener onClickListener = new OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        if (Section.this.equals(accordion.currentSection)) {
+                            accordion.setCurrentSection(null);
+                        } else if (listView != null && listView.getCount() > 0) {
+                            accordion.setCurrentSection(Section.this);
+                        }
+                    }
+                };
+
+                if (textView != null) {
+                    textView.setOnClickListener(onClickListener);
+                    textView.setText(context.getString(textViewStringId));
+                }
+
+                if (iconView != null) {
+                    iconView.setOnClickListener(onClickListener);
+                }
+
+                if (listView != null) {
+                    //This is used to handle touch events on the list view and consume them without
+                    //passing onto scroll view
+                    listView.setOnTouchListener(new OnTouchListener() {
+                        @Override
+                        public boolean onTouch(View view, MotionEvent motionEvent) {
+                            view.getParent().requestDisallowInterceptTouchEvent(true);
+                            return false;
+                        }
+                    });
+                }
+                // initialize section in closed state
+                close(context);
+            }
+        }
+    }
+}
